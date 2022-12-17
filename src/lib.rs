@@ -3,16 +3,26 @@ extern crate vst;
 use std::sync::Arc;
 use vst::prelude::*;
 
-const SAMPLE_RATE : f64 = 44100.0;
-const MAX_DELAY_TIME : f64 = 10.0;
-const DELAY_LINE_LEN : usize = MAX_DELAY_TIME as usize * SAMPLE_RATE as usize;
-
-
 struct doubleDelay {
     // Store a handle to the plugin's parameter object.
     params: Arc<DelayEffectParameters>,
-    delay_line: [f32;DELAY_LINE_LEN],
+    delay_line: [f32;441010],
     delay_index: usize,
+}
+
+impl doubleDelay {
+    
+    fn set_index (&mut self, sample_len: f32) {
+        if self.delay_index >= sample_len.round() as usize {self.delay_index = 0}
+        else {self.delay_index += 1}
+        
+    }
+    fn get_delay (&self) -> f32 {
+        self.delay_line[self.delay_index]
+    }
+    fn set_delay (&mut self,new: f32) {
+       self.delay_line[self.delay_index] = new 
+    }
 }
 
 
@@ -53,7 +63,7 @@ impl Plugin for doubleDelay {
         // Setting a default to 0.5 means it's halfway up.
         doubleDelay {
             params: Arc::new(DelayEffectParameters::default()),
-            delay_line: [0.0;DELAY_LINE_LEN],
+            delay_line: [0.0;441010],
             delay_index: 0,
         }
     }
@@ -62,7 +72,7 @@ impl Plugin for doubleDelay {
         Info {
             name: "Delay in Rust".to_string(),
             vendor: "Sam Segal".to_string(),
-            unique_id: 243723072,
+            unique_id: 11458734,
             version: 1,
             inputs: 2,
             outputs: 2,
@@ -81,9 +91,7 @@ impl Plugin for doubleDelay {
         let drymix = self.params.delay_dry.get();
         let wetmix = self.params.delay_wet.get();
         let feedback = self.params.delay_feedback.get();
-        let samples_len = self.params.delay_time.get() * SAMPLE_RATE as f32;
-        let  mut delay_buffer = self.delay_line ;
-        let mut delay_index = self.delay_index ;
+        let sample_len = self.params.delay_time.get() * 44100.0 ;
         // First, we destructure our audio buffer into an arbitrary number of
         // input and output buffers.  Usually, we'll be dealing with stereo (2 of each)
         // but that might change.
@@ -91,15 +99,10 @@ impl Plugin for doubleDelay {
             // Next, we'll loop through each individual sample so we can apply the amplitude
             // value to it.
             for (input_sample, output_sample) in input_buffer.iter().zip(output_buffer) {
-            let delayed = delay_buffer[delay_index];
-            *output_sample = ((*input_sample * drymix) + (delayed * wetmix)) * amplitude;
-            
-
-            delay_buffer[delay_index] = feedback + (delayed * *input_sample);
-            delay_index += 1 ;
-            if delay_index >= samples_len as usize {
-                delay_index = 0
-            }
+            *output_sample = (*input_sample * drymix) + (wetmix * self.get_delay());
+            let new = *input_sample * feedback;
+            self.set_delay(new);
+            self.set_index(sample_len);
 
             }
         }
@@ -117,6 +120,8 @@ impl PluginParameters for DelayEffectParameters {
     fn get_parameter(&self, index: i32) -> f32 {
         match index {
             0 => self.amplitude.get(),
+            1 => self.delay_feedback.get(),
+            2 => self.delay_time.get(),
             _ => 0.0,
         }
     }
@@ -137,8 +142,8 @@ impl PluginParameters for DelayEffectParameters {
     fn get_parameter_text(&self, index: i32) -> String {
         match index {
             0 => format!("{:.2}", (self.amplitude.get() - 0.5) * 2f32),
-            1 => format!("{:.2}", (self.delay_feedback.get()) * 2f32),
-            2 => format!("{:.2}", (self.delay_time.get()) * 2f32), 
+            1 => format!("{:.1}", (self.delay_feedback.get()) * 2f32),
+            2 => format!("{:.8}", (self.delay_time.get()) * 2f32), 
             _ => "".to_string(),
         }
     }
