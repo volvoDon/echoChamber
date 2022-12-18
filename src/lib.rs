@@ -9,7 +9,7 @@ struct doubleDelay {
     delay_line: [f32;441010],
     delay_index: usize,
 }
-
+// fn to access and maniputlate the delay_lines 
 impl doubleDelay {
     
     fn set_index (&mut self, sample_len: f32) {
@@ -25,17 +25,7 @@ impl doubleDelay {
     }
 }
 
-
-/// The plugin's parameter object contains the values of parameters that can be
-/// adjusted from the host.  If we were creating an effect that didn't allow the
-/// user to modify it at runtime or have any controls, we could omit this part.
-///
-/// The parameters object is shared between the processing and GUI threads.
-/// For this reason, all mutable state in the object has to be represented
-/// through thread-safe interior mutability. The easiest way to achieve this
-/// is to store the parameters in atomic containers.
 struct DelayEffectParameters {
-    // The plugin's state consists of a single parameter: amplitude.
     amplitude: AtomicFloat,
     delay_time: AtomicFloat,
     delay_wet: AtomicFloat,
@@ -47,7 +37,7 @@ impl Default for DelayEffectParameters {
     fn default() -> DelayEffectParameters {
         DelayEffectParameters {
             amplitude: AtomicFloat::new(0.5),
-            delay_time: AtomicFloat::new(1.0),
+            delay_time: AtomicFloat::new(0.5),
             delay_wet: AtomicFloat::new(0.5),
             delay_dry: AtomicFloat::new(0.5),
             delay_feedback: AtomicFloat::new(0.3),
@@ -59,8 +49,8 @@ impl Default for DelayEffectParameters {
 // define functions that give necessary info to our host.
 impl Plugin for doubleDelay {
     fn new(_host: HostCallback) -> Self {
-        // Note that controls will always return a value from 0 - 1.
-        // Setting a default to 0.5 means it's halfway up.
+        // controls will always return a value from 0 - 1.
+        // Setting a default to 0.5 means it's halfway
         doubleDelay {
             params: Arc::new(DelayEffectParameters::default()),
             delay_line: [0.0;441010],
@@ -76,31 +66,26 @@ impl Plugin for doubleDelay {
             version: 1,
             inputs: 2,
             outputs: 2,
-            // This `parameters` bit is important; without it, none of our
-            // parameters will be shown!
-            parameters: 5,
+            parameters: 3,
             category: Category::Effect,
             ..Default::default()
         }
     }
 
-    // Here is where the bulk of our audio processing code goes.
+    //  audio processing code
     fn process(&mut self, buffer: &mut AudioBuffer<f32>) {
-        // Read the amplitude from the parameter object
-        let amplitude = self.params.amplitude.get();
+        let amp = self.params.amplitude.get();
         let drymix = self.params.delay_dry.get();
         let wetmix = self.params.delay_wet.get();
         let feedback = self.params.delay_feedback.get();
         let sample_len = self.params.delay_time.get() * 44100.0 ;
-        // First, we destructure our audio buffer into an arbitrary number of
-        // input and output buffers.  Usually, we'll be dealing with stereo (2 of each)
-        // but that might change.
+        
         for (input_buffer, output_buffer) in buffer.zip() {
             // Next, we'll loop through each individual sample so we can apply the amplitude
             // value to it.
             for (input_sample, output_sample) in input_buffer.iter().zip(output_buffer) {
-            *output_sample = (*input_sample * drymix) + (wetmix * self.get_delay());
-            let new = *input_sample * feedback;
+            *output_sample = ((*input_sample * drymix) + (wetmix * self.get_delay()))*amp;
+            let new = (*input_sample + self.get_delay()) * feedback;
             self.set_delay(new);
             self.set_index(sample_len);
 
@@ -132,7 +117,7 @@ impl PluginParameters for DelayEffectParameters {
         match index {
             0 => self.amplitude.set(val),
             1 => self.delay_feedback.set(val),
-            2 => self.delay_time.set(val),
+            2 => self.delay_time.set(val * 4.0),
             _ => (),
         }
     }
@@ -142,8 +127,8 @@ impl PluginParameters for DelayEffectParameters {
     fn get_parameter_text(&self, index: i32) -> String {
         match index {
             0 => format!("{:.2}", (self.amplitude.get() - 0.5) * 2f32),
-            1 => format!("{:.1}", (self.delay_feedback.get()) * 2f32),
-            2 => format!("{:.8}", (self.delay_time.get()) * 2f32), 
+            1 => format!("{:.2}", (self.delay_feedback.get())),
+            2 => format!("{:.2}", (self.delay_time.get())*4f32), 
             _ => "".to_string(),
         }
     }
